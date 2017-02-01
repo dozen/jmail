@@ -3,6 +3,7 @@ package jmail
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 	"io"
@@ -14,7 +15,6 @@ import (
 	"net/mail"
 	"net/textproto"
 	"strings"
-	"errors"
 )
 
 var debug = debugT(false)
@@ -46,6 +46,7 @@ type Message interface {
 	DecBody() ([]byte, error)
 	GetFrom() ([]*mail.Address, error)
 	GetTo() ([]*mail.Address, error)
+	GetHeader(string) string
 }
 
 // A Jmessage represents a parsed mail message.
@@ -229,4 +230,8 @@ func (j *Jmessage) GetFrom() ([]*mail.Address, error) {
 func (j *Jmessage) GetTo() ([]*mail.Address, error) {
 	list, err := AddressParser.ParseList(j.Header.Get("To"))
 	return list, err
+}
+
+func (j *Jmessage) GetHeader(key string) string {
+	return j.Header.Get(key)
 }

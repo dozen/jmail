@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-
 	// "strings"
 	// "fmt"
 	// "golang.org/x/text/encoding/japanese"
