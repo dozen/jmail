@@ -14,6 +14,7 @@ import (
 	"net/mail"
 	"net/textproto"
 	"strings"
+	"errors"
 )
 
 var debug = debugT(false)
@@ -40,9 +41,32 @@ const (
 	MEDIATYPE_MULTI_ALT     = "multipart/alternative"
 )
 
+type Message interface {
+	GetSubject() string
+	GetBody() ([]byte, error)
+	GetFrom() ([]*mail.Address, error)
+	GetTo() ([]*mail.Address, error)
+}
+
 // A Jmessage represents a parsed mail message.
 type Jmessage struct {
 	*mail.Message
+}
+
+var AddressParser = mail.AddressParser{
+	//ISO-2022-JP, EUC-JPに対応する
+	WordDecoder: &mime.WordDecoder{
+		CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
+			switch charset {
+			case "iso-2022-jp":
+				return japanese.ISO2022JP.NewDecoder().Reader(input), nil
+			case "euc-jp":
+				return japanese.EUCJP.NewDecoder().Reader(input), nil
+			default:
+				return nil, errors.New("WordDecoder.CharsetReader: Unknown Charset")
+			}
+		},
+	},
 }
 
 func ReadMessage(r io.Reader) (msg *Jmessage, err error) {
@@ -195,4 +219,14 @@ func readAlternative(part *multipart.Part) (mailbody []byte, err error) {
 			return readPlainText(p.Header, p)
 		}
 	}
+}
+
+func (j *Jmessage) GetFrom() ([]*mail.Address, error) {
+	list, err := AddressParser.ParseList(j.Header.Get("From"))
+	return list, err
+}
+
+func (j *Jmessage) GetTo() ([]*mail.Address, error) {
+	list, err := AddressParser.ParseList(j.Header.Get("To"))
+	return list, err
 }
