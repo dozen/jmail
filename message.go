@@ -42,8 +42,8 @@ const (
 )
 
 type Message interface {
-	GetSubject() string
-	GetBody() ([]byte, error)
+	DecSubject() string
+	DecBody() ([]byte, error)
 	GetFrom() ([]*mail.Address, error)
 	GetTo() ([]*mail.Address, error)
 }
