@@ -3,9 +3,6 @@ package jmail
 import (
 	"bytes"
 	"encoding/base64"
-	"errors"
-	"golang.org/x/text/encoding/japanese"
-	"golang.org/x/text/transform"
 	"io"
 	"io/ioutil"
 	"log"
@@ -15,17 +12,11 @@ import (
 	"net/mail"
 	"net/textproto"
 	"strings"
+
+	"github.com/pkg/errors"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/transform"
 )
-
-var debug = debugT(false)
-
-type debugT bool
-
-func (d debugT) Printf(format string, args ...interface{}) {
-	if d {
-		log.Printf(format, args...)
-	}
-}
 
 const (
 	SUBJ_PREFIX_ISO2022JP_B = "=?iso-2022-jp?b?"
@@ -121,57 +112,38 @@ func (msg Jmessage) DecSubject() string {
 	return bufSubj.String()
 }
 
-func (msg Jmessage) DecBody() (mailbody []byte, err error) {
-	contentType := msg.Header.Get("Content-Type")
-	if contentType == "" {
-		return readPlainText(map[string][]string(msg.Header), msg.Body)
+func (msg Jmessage) DecBody() ([]byte, error) {
+	return getText(msg.Header, msg.Body)
+}
+
+func getText(header mail.Header, body io.Reader) ([]byte, error) {
+	contentType := header.Get("Content-Type")
+	if contentType == "" || strings.HasPrefix(contentType, MEDIATYPE_TEXT) {
+		return readPlainText(map[string][]string(header), body)
 	}
-	mediaType, params, err := mime.ParseMediaType(contentType)
-	debug.Printf("MediaType: %s, %v\n", mediaType, params)
+	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		debug.Printf("Error: %v", err)
-		return
+		return nil, errors.Wrapf(err, "getText: ParseMediaType:")
 	}
-	mailbody = make([]byte, 0)
-	if strings.HasPrefix(mediaType, MEDIATYPE_MULTI) {
-		// multipart/...
-		mr := multipart.NewReader(msg.Body, params["boundary"])
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				return mailbody, err
-			}
-			if err != nil {
-				debug.Printf("Error: %v", err)
-			}
-			mt, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
-			if err != nil {
-				debug.Printf("Error: %v", err)
-				return nil, err
-			}
-			debug.Printf("MediaType-inner: %s\n", mt)
-			if strings.HasPrefix(mt, MEDIATYPE_TEXT) {
-				// text/plain
-				return readPlainText(p.Header, p)
-			}
-			if strings.HasPrefix(mt, MEDIATYPE_MULTI_ALT) {
-				// multipart/alternative
-				return readAlternative(p)
-			}
-			// slurp, err := ioutil.ReadAll(p)
-			// if err != nil {
-			//   debug.Printf("Error: %v", err)
-			// }
-			// for key, values := range p.Header {
-			//   debug.Printf("%s:%v", key, values)
-			// }
-			// fmt.Printf("Slurping...: %q\n", slurp)
+	mr := multipart.NewReader(body, params["boundary"])
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			return nil, err
 		}
-	} else {
-		// text/plain, text/html
-		return readPlainText(map[string][]string(msg.Header), msg.Body)
+		if err != nil {
+			return nil, err
+		}
+		text, err := getText(mail.Header(p.Header), p)
+		if err == io.EOF {
+			continue
+		}
+		if err != nil {
+			log.Println("[WARN] dozen/jmail: failed parse multipart:", err)
+			continue
+		}
+		return text, err
 	}
-	return
 }
 
 // Read body from text/plain
@@ -194,32 +166,7 @@ func readPlainText(header textproto.MIMEHeader, body io.Reader) (mailbody []byte
 		// encoding = 8bit or 7bit
 		mailbody, err = ioutil.ReadAll(body)
 	}
-	return mailbody, err
-}
-
-// Read body from multipart/alternative
-func readAlternative(part *multipart.Part) (mailbody []byte, err error) {
-	contentType := part.Header.Get("Content-Type")
-	_, params, err := mime.ParseMediaType(contentType)
-	mr := multipart.NewReader(part, params["boundary"])
-	for {
-		p, err := mr.NextPart()
-		if err == io.EOF {
-			return mailbody, err
-		}
-		if err != nil {
-			debug.Printf("Error: %v", err)
-		}
-		mt, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
-		if err != nil {
-			debug.Printf("Error: %v", err)
-			return nil, err
-		}
-		debug.Printf("MediaType-innerAlt: %s\n", mt)
-		if strings.HasPrefix(mt, MEDIATYPE_TEXT) {
-			return readPlainText(p.Header, p)
-		}
-	}
+	return mailbody, errors.Wrapf(err, "readPlainText:")
 }
 
 func (j *Jmessage) GetFrom() ([]*mail.Address, error) {
