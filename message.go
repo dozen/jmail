@@ -3,7 +3,6 @@ package jmail
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -18,16 +17,6 @@ import (
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 )
-
-var debug = debugT(false)
-
-type debugT bool
-
-func (d debugT) Printf(format string, args ...interface{}) {
-	if d {
-		log.Printf(format, args...)
-	}
-}
 
 const (
 	SUBJ_PREFIX_ISO2022JP_B = "=?iso-2022-jp?b?"
@@ -143,7 +132,6 @@ func getText(header mail.Header, body io.Reader) ([]byte, error) {
 			return nil, err
 		}
 		if err != nil {
-			debug.Printf("Error: %v", err)
 			return nil, err
 		}
 		text, err := getText(mail.Header(p.Header), p)
@@ -151,8 +139,7 @@ func getText(header mail.Header, body io.Reader) ([]byte, error) {
 			continue
 		}
 		if err != nil {
-			// デコード失敗したらエラーにすべき？
-			fmt.Println("[ERROR] multipart error:", err)
+			log.Println("[WARN] dozen/jmail: failed parse multipart:", err)
 			continue
 		}
 		return text, err
